@@ -130,9 +130,17 @@ def _load_ini():
 
 
 def _load_yaml():
-    import yaml
+    from yaml import load, YAMLError
 
-    return yaml.load, yaml.YAMLError, MalformedYAML
+    try:
+        from yaml import CSafeLoader as SafeLoader
+    except ImportError:
+        from yaml import SafeLoader
+
+    def yaml_loader(stream):
+        return load(stream, Loader=SafeLoader)
+
+    return yaml_loader, YAMLError, MalformedYAML
 
 
 def _load_querystring():
@@ -142,7 +150,7 @@ def _load_querystring():
         import urllib.parse as urlparse
 
     def _parse_qs(data):
-        """ Extend urlparse to allow objects in dot syntax.
+        """Extend urlparse to allow objects in dot syntax.
 
         >>> _parse_qs('user.first_name=Matt&user.last_name=Robenolt')
         {'user': {'first_name': 'Matt', 'last_name': 'Robenolt'}}
@@ -213,7 +221,23 @@ formats = {
 
 
 def render(template_path, data, extensions, filters, strict=False):
-    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+    from jinja2 import (
+        __version__ as jinja_version,
+        Environment,
+        FileSystemLoader,
+        StrictUndefined,
+    )
+
+    # Starting with jinja2 3.1, `with_` and `autoescape` are no longer
+    # able to be imported, but since they were default, let's stub them back
+    # in implicitly for older versions.
+    # We also don't track any lower bounds on jinja2 as a dependency, so
+    # it's not easily safe to know it's included by default either.
+    if tuple(jinja_version.split(".", 2)) < ("3", "1"):
+        for ext in "with_", "autoescape":
+            ext = "jinja2.ext." + ext
+            if ext not in extensions:
+                extensions.append(ext)
 
     env = Environment(
         loader=FileSystemLoader(os.path.dirname(template_path)),
@@ -286,7 +310,7 @@ def cli(opts, args):
         try:
             data = fn(data) or {}
         except except_exc:
-            raise raise_exc(u"%s ..." % data[:60])
+            raise raise_exc("%s ..." % data[:60])
     else:
         data = {}
 
@@ -384,7 +408,7 @@ def main():
         help="extra jinja2 extensions to load",
         dest="extensions",
         action="append",
-        default=["do", "with_", "autoescape", "loopcontrols"],
+        default=["do", "loopcontrols"],
     )
     parser.add_option(
         "-f",
