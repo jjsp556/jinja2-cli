@@ -411,7 +411,6 @@ def main():
         default=["do", "loopcontrols"],
     )
     parser.add_option(
-        "-f",
         "--filter",
         help="extra jinja2 filters to load",
         dest="filters",
