@@ -69,6 +69,14 @@ class MalformedEnv(InvalidDataFormat):
     pass
 
 
+class MalformedHJSON(InvalidDataFormat):
+    pass
+
+
+class MalformedJSON5(InvalidDataFormat):
+    pass
+
+
 def get_format(fmt):
     try:
         return formats[fmt]()
@@ -123,7 +131,11 @@ def _load_ini():
                 return d
 
         p = MyConfigParser()
-        p.readfp(StringIO(data))
+        try:
+            reader = p.readfp
+        except AttributeError:
+            reader = p.read_file
+        reader(StringIO(data))
         return p.as_dict()
 
     return _parse_ini, ConfigParser.Error, MalformedINI
@@ -157,7 +169,7 @@ def _load_querystring():
         """
         dict_ = {}
         for k, v in urlparse.parse_qs(data).items():
-            v = map(lambda x: x.strip(), v)
+            v = list(map(lambda x: x.strip(), v))
             v = v[0] if len(v) == 1 else v
             if "." in k:
                 pieces = k.split(".")
@@ -206,6 +218,18 @@ def _load_env():
     return _parse_env, Exception, MalformedEnv
 
 
+def _load_hjson():
+    import hjson
+
+    return hjson.loads, Exception, MalformedHJSON
+
+
+def _load_json5():
+    import json5
+
+    return json5.loads, Exception, MalformedJSON5
+
+
 # Global list of available format parsers on your system
 # mapped to the callable/Exception to parse a string into a dict
 formats = {
@@ -217,6 +241,8 @@ formats = {
     "toml": _load_toml,
     "xml": _load_xml,
     "env": _load_env,
+    "hjson": _load_hjson,
+    "json5": _load_json5,
 }
 
 
@@ -306,6 +332,10 @@ def cli(opts, args):
                 raise InvalidDataFormat("toml: install toml to fix")
             if format == "xml":
                 raise InvalidDataFormat("xml: install xmltodict to fix")
+            if format == "hjson":
+                raise InvalidDataFormat("hjson: install hjson to fix")
+            if format == "json5":
+                raise InvalidDataFormat("json5: install json5 to fix")
             raise
         try:
             data = fn(data) or {}
@@ -351,8 +381,12 @@ def cli(opts, args):
 def parse_kv_string(pairs):
     dict_ = {}
     for pair in pairs:
-        k, v = pair.split("=", 1)
-        dict_[force_text(k)] = force_text(v)
+        pair = force_text(pair)
+        try:
+            k, v = pair.split("=", 1)
+        except ValueError:
+            k, v = pair, None
+        dict_[k] = v
     return dict_
 
 
@@ -395,6 +429,7 @@ def main():
         usage="usage: %prog [options] <input template> <input data>"
     )
     parser.add_option(
+        "-f",
         "--format",
         help=lambda: "format of input variables: %s"
         % ", ".join(sorted(list(get_available_formats()))),
